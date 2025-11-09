@@ -1,10 +1,5 @@
-import os
-import re
-import time
-import gzip
-import pickle
-import traceback
-import threading
+import os,requests,re,html,time,gzip,traceback
+import threading,pickle
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from selenium import webdriver
@@ -127,21 +122,43 @@ def fetch_episode_threadsafe(ep, anime_id, driver):
 # ---------- EXTRACT ONE ANIME ----------
 def extract_anime_urls(anime_id: int, driver):
     url = f"{MIRURO_WATCH_BASE}/{anime_id}"
+
+    # --- Step 0: Lightweight check with requests before using Selenium ---
+    try:
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        resp.raise_for_status()
+        page_text = resp.text
+
+        # Check the <title> tag content
+        if "<title>Miruro · Watch Free Anime Online" in page_text:
+            print(f"[SKIP] Invalid ID {anime_id} (generic Miruro homepage title).")
+            return None
+
+        # Optionally, extract the title text just for logs
+        title_match = re.search(r"<title>(.*?)</title>", page_text, re.IGNORECASE)
+        if title_match:
+            title_raw = html.unescape(title_match.group(1).strip())
+            print(f"🔍 Precheck OK — Page title: {title_raw}")
+        else:
+            title_raw = "Unknown Title"
+    except Exception as e:
+        print(f"⚠️ Precheck failed for ID {anime_id}: {e}")
+        return None
+
+    # --- Step 1: Load valid anime page in Selenium ---
     try:
         driver.get(url)
-        # Wait until page body loads
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
     except Exception as e:
-        print(f"⚠️ Page for ID {anime_id} did not load. Skipping.")
+        print(f"⚠️ Page for ID {anime_id} did not load in Selenium. Skipping.")
         if TESTING_FLAG:
             save_debug_snapshot(driver, anime_id, f"Page load failed: {e}")
         return None
 
-    # --- Step 1: Validate by .ep-title ---
+    # --- Step 2: Validate by .ep-title ---
     try:
-        # Wait a bit for Miruro JS to populate
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, ".ep-title"))
         )
@@ -158,7 +175,7 @@ def extract_anime_urls(anime_id: int, driver):
 
     print(f"🎬 Anime ID {anime_id} — Title: {title_text}")
 
-    # --- Step 2: Get total episode count ---
+    # --- Step 3: Get total episode count ---
     total_eps = get_total_episodes(driver)
     if total_eps == 0:
         print(f"[SKIP] No episode dropdown found for ID {anime_id}.")
@@ -168,12 +185,15 @@ def extract_anime_urls(anime_id: int, driver):
 
     print(f"📺 Detected {total_eps} episodes for '{title_text}'")
 
-    # --- Step 3: Extract each episode URL (multi-threaded with one driver) ---
+    # --- Step 4: Extract each episode URL (multi-threaded with one driver) ---
     episode_entries = []
-    MAX_THREADS = 10  # run up to 10 episodes in parallel (shared driver, safe)
+    MAX_THREADS = 10  # up to 10 concurrent episode fetches
 
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        futures = {executor.submit(fetch_episode_threadsafe, ep, anime_id, driver): ep for ep in range(1, total_eps + 1)}
+        futures = {
+            executor.submit(fetch_episode_threadsafe, ep, anime_id, driver): ep
+            for ep in range(1, total_eps + 1)
+        }
         for future in as_completed(futures):
             ep = futures[future]
             try:
@@ -185,7 +205,6 @@ def extract_anime_urls(anime_id: int, driver):
                 print(f"  ❌ Thread error on Ep {ep}: {e}")
 
     return episode_entries
-
 
 # ---------- PROGRESS TRACKER ----------
 def load_progress():
