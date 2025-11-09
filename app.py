@@ -225,19 +225,46 @@ def main():
         for anime_id in range(START_ID, END_ID + 1):
             current_id = anime_id
             try:
+                # Measure time taken per anime
+                start_time = time.time()
+                
                 episode_data = extract_anime_urls(anime_id, driver)
                 if not episode_data:
                     save_progress(anime_id)
                     continue
 
+
+                episode_data = extract_anime_urls(anime_id, driver)
+                elapsed_time = time.time() - start_time
+
+                if not episode_data:
+                    save_progress(anime_id)
+                    continue
+
                 combined_str = ",".join(episode_data)
-                file_path = os.path.join(OUTPUT_DIR, f"anime_{anime_id}.bin")
+
+                # Format time — e.g., 12.3s or 1m23s if longer
+                if elapsed_time < 60:
+                    elapsed_label = f"{elapsed_time:.1f}s"
+                else:
+                    mins, secs = divmod(int(elapsed_time), 60)
+                    elapsed_label = f"{mins}m{secs}s"
+
+                file_path = os.path.join(OUTPUT_DIR, f"anime_{anime_id}_{elapsed_label}.bin")
 
                 # Save as compressed binary
                 with gzip.open(file_path, "wb") as f:
                     pickle.dump(combined_str, f)
 
-                print(f"💾 Saved {file_path} ({len(episode_data)} entries)")
+                print(f"💾 Saved {file_path} ({len(episode_data)} entries, took {elapsed_label})")
+
+                try:
+                    file_fun(file_path, caption=f"Anime ID {anime_id} ✅ ({len(episode_data)} eps, {elapsed_label})")
+                except Exception as e:
+                    print(f"⚠️ Telegram send failed for {anime_id}: {e}")
+
+                save_progress(anime_id)
+
 
                 try:
                     file_fun(file_path, caption=f"Anime ID {anime_id} ✅ ({len(episode_data)} eps)")
