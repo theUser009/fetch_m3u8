@@ -4,7 +4,6 @@ import time
 import gzip
 import pickle
 import traceback
-import requests
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
@@ -18,6 +17,10 @@ from send_mst import msg_fun, file_fun
 MIRURO_WATCH_BASE = "https://www.miruro.to/watch"
 PROGRESS_FILE = "progress.txt"
 OUTPUT_DIR = "anime_bins"
+DEBUG_DIR = "debug_dumps"
+
+# Enable testing mode (True = capture screenshots and HTML on failure)
+TESTING_FLAG = True
 
 
 # ---------- DRIVER ----------
@@ -67,6 +70,29 @@ def extract_video_url(driver, max_presses=10):
     return None
 
 
+# ---------- SAVE DEBUG DATA ----------
+def save_debug_snapshot(driver, anime_id, error_text="Unknown Error"):
+    """Saves a screenshot and HTML dump for debugging and sends them via Telegram."""
+    try:
+        os.makedirs(DEBUG_DIR, exist_ok=True)
+        screenshot_path = os.path.join(DEBUG_DIR, f"animeid_{anime_id}.png")
+        html_path = os.path.join(DEBUG_DIR, f"animeid_{anime_id}.html")
+
+        # Save screenshot and page source
+        driver.save_screenshot(screenshot_path)
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+
+        # Send to Telegram if testing mode
+        caption = f"⚠️ Debug dump for Anime ID {anime_id}\nReason: {error_text}"
+        file_fun(screenshot_path, caption=caption)
+        file_fun(html_path, caption=f"🧩 HTML dump for Anime ID {anime_id}")
+
+        print(f"🧩 Debug files saved and sent for Anime ID {anime_id}")
+    except Exception as e:
+        print(f"⚠️ Failed to save/send debug dump for ID {anime_id}: {e}")
+
+
 # ---------- EXTRACT ONE ANIME ----------
 def extract_anime_urls(anime_id: int, driver):
     url = f"{MIRURO_WATCH_BASE}/{anime_id}"
@@ -76,19 +102,25 @@ def extract_anime_urls(anime_id: int, driver):
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
-    except Exception:
+    except Exception as e:
         print(f"⚠️ Page for ID {anime_id} did not load. Skipping.")
+        if TESTING_FLAG:
+            save_debug_snapshot(driver, anime_id, f"Page load failed: {e}")
         return None
 
     html = driver.page_source
     # If Miruro shows an invalid page
     if "404" in html or "not found" in html.lower():
         print(f"[SKIP] Miruro page for ID {anime_id} not found.")
+        if TESTING_FLAG:
+            save_debug_snapshot(driver, anime_id, "404 or Not Found Page")
         return None
 
     total_eps = get_total_episodes(driver)
     if total_eps == 0:
         print(f"[SKIP] No episode dropdown found for ID {anime_id}.")
+        if TESTING_FLAG:
+            save_debug_snapshot(driver, anime_id, "No episode dropdown found")
         return None
 
     print(f"\n🎬 Miruro Anime ID {anime_id} — Detected {total_eps} episodes")
@@ -108,6 +140,8 @@ def extract_anime_urls(anime_id: int, driver):
                 print(f"  ⚠️  Ep {ep}: No URL found")
         except Exception as e:
             print(f"  ❌ Ep {ep} error: {str(e)[:80]}")
+            if TESTING_FLAG:
+                save_debug_snapshot(driver, anime_id, f"Episode {ep} error: {e}")
     return episode_entries
 
 
@@ -135,10 +169,9 @@ def save_progress(last_id: int):
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     MAX_ID = int(os.getenv("MAX_ID", "30"))  # per GitHub run
-    # START_ID = load_progress()
     START_ID = 153800
-    # END_ID = START_ID + MAX_ID - 1
     END_ID = 153801
+
     msg_fun(f"🚀 Starting Miruro scrape: IDs {START_ID} → {END_ID}")
 
     driver = None
@@ -173,6 +206,8 @@ def main():
             except Exception as e:
                 print(f"[ERROR] {anime_id}: {e}")
                 traceback.print_exc()
+                if TESTING_FLAG:
+                    save_debug_snapshot(driver, anime_id, f"Top-level scrape error: {e}")
                 save_progress(anime_id)
 
             time.sleep(1)
@@ -181,6 +216,8 @@ def main():
         print(f"💥 Fatal error: {e}")
         traceback.print_exc()
         msg_fun(f"❌ Fatal error at Anime ID {current_id}: {e}")
+        if TESTING_FLAG and driver:
+            save_debug_snapshot(driver, current_id, f"Fatal crash: {e}")
 
     finally:
         save_progress(current_id)
