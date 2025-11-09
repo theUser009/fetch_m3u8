@@ -96,7 +96,7 @@ def save_debug_snapshot(driver, anime_id, error_text="Unknown Error"):
         print(f"🧩 Debug files saved and sent for Anime ID {anime_id}")
     except Exception as e:
         print(f"⚠️ Failed to save/send debug dump for ID {anime_id}: {e}")
-
+ 
 # ---------- EXTRACT ONE ANIME ----------
 def extract_anime_urls(anime_id: int, driver):
     url = f"{MIRURO_WATCH_BASE}/{anime_id}"
