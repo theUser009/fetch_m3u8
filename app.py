@@ -36,24 +36,29 @@ def initialize_driver():
 
 # ---------- PARSE EPISODE COUNT ----------
 def get_total_episodes(driver):
-    """Extract the maximum episode number from the dropdown if available."""
+    """Extract maximum episode number from the new Miruro layout."""
     try:
-        select_elem = driver.find_element(By.CSS_SELECTOR, "select")
-        options = select_elem.find_elements(By.TAG_NAME, "option")
+        # Target the new div class that holds the select dropdown
+        container = driver.find_element(By.CSS_SELECTOR, "div.c1hiac3k select")
+        options = container.find_elements(By.TAG_NAME, "option")
+
         if not options:
             return 0
 
         max_ep = 0
         for opt in options:
-            match = re.search(r"EPS\s+(\d+)\s*-\s*(\d+)", opt.text)
+            text = opt.text.strip()
+            # Matches things like "EPS 1 - 74" or "Ep 1 - 24"
+            match = re.search(r"(\d+)\s*-\s*(\d+)", text)
             if match:
                 upper = int(match.group(2))
                 if upper > max_ep:
                     max_ep = upper
-        return max_ep
-    except Exception:
-        return 0
 
+        return max_ep
+    except Exception as e:
+        print(f"⚠️ Failed to get total episodes: {e}")
+        return 0
 
 # ---------- VIDEO URL EXTRACT ----------
 def extract_video_url(driver, max_presses=10):
