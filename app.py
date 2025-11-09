@@ -20,7 +20,7 @@ OUTPUT_DIR = "anime_bins"
 DEBUG_DIR = "debug_dumps"
 
 # Enable testing mode (True = capture screenshots and HTML on failure)
-TESTING_FLAG = True
+TESTING_FLAG = False
 
 
 # ---------- DRIVER ----------
@@ -152,7 +152,7 @@ def extract_anime_urls(anime_id: int, driver):
             if vurl:
                 entry = f"ep_num_{ep}_url_data_{vurl}"
                 episode_entries.append(entry)
-                print(f"  ✅ {entry}")
+                # print(f"  ✅ {entry}")
             else:
                 print(f"  ⚠️ Ep {ep}: No URL found")
         except Exception as e:
@@ -187,7 +187,7 @@ def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     MAX_ID = int(os.getenv("MAX_ID", "30"))  # per GitHub run
     START_ID = 153800
-    END_ID = 153801
+    END_ID = 153800
 
     msg_fun(f"🚀 Starting Miruro scrape: IDs {START_ID} → {END_ID}")
 
