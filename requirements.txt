@@ -1,0 +1,8 @@
+Flask
+Flask-Cors
+Jinja2
+selenium
+undetected-chromedriver
+setuptools
+requests
+fastapi
