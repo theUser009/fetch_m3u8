@@ -97,13 +97,12 @@ def save_debug_snapshot(driver, anime_id, error_text="Unknown Error"):
     except Exception as e:
         print(f"⚠️ Failed to save/send debug dump for ID {anime_id}: {e}")
 
-
 # ---------- EXTRACT ONE ANIME ----------
 def extract_anime_urls(anime_id: int, driver):
     url = f"{MIRURO_WATCH_BASE}/{anime_id}"
     try:
         driver.get(url)
-        # Wait for page to load properly (max 30 seconds)
+        # Wait until page body loads
         WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
@@ -113,14 +112,26 @@ def extract_anime_urls(anime_id: int, driver):
             save_debug_snapshot(driver, anime_id, f"Page load failed: {e}")
         return None
 
-    html = driver.page_source
-    # If Miruro shows an invalid page
-    if "404" in html or "not found" in html.lower():
-        print(f"[SKIP] Miruro page for ID {anime_id} not found.")
+    # --- Step 1: Validate by .ep-title ---
+    try:
+        # Wait a bit for Miruro JS to populate
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".ep-title"))
+        )
+        title_elem = driver.find_element(By.CSS_SELECTOR, ".ep-title")
+        title_text = title_elem.text.strip()
+    except Exception:
+        title_text = ""
+
+    if not title_text:
+        print(f"[SKIP] Invalid Miruro page (no title) for ID {anime_id}.")
         if TESTING_FLAG:
-            save_debug_snapshot(driver, anime_id, "404 or Not Found Page")
+            save_debug_snapshot(driver, anime_id, "No .ep-title element or empty title")
         return None
 
+    print(f"🎬 Anime ID {anime_id} — Title: {title_text}")
+
+    # --- Step 2: Get total episode count ---
     total_eps = get_total_episodes(driver)
     if total_eps == 0:
         print(f"[SKIP] No episode dropdown found for ID {anime_id}.")
@@ -128,8 +139,9 @@ def extract_anime_urls(anime_id: int, driver):
             save_debug_snapshot(driver, anime_id, "No episode dropdown found")
         return None
 
-    print(f"\n🎬 Miruro Anime ID {anime_id} — Detected {total_eps} episodes")
+    print(f"📺 Detected {total_eps} episodes for '{title_text}'")
 
+    # --- Step 3: Extract each episode URL ---
     episode_entries = []
     for ep in range(1, total_eps + 1):
         ep_url = f"{MIRURO_WATCH_BASE}/{anime_id}/episode-{ep}"
@@ -142,13 +154,13 @@ def extract_anime_urls(anime_id: int, driver):
                 episode_entries.append(entry)
                 print(f"  ✅ {entry}")
             else:
-                print(f"  ⚠️  Ep {ep}: No URL found")
+                print(f"  ⚠️ Ep {ep}: No URL found")
         except Exception as e:
             print(f"  ❌ Ep {ep} error: {str(e)[:80]}")
             if TESTING_FLAG:
                 save_debug_snapshot(driver, anime_id, f"Episode {ep} error: {e}")
-    return episode_entries
 
+    return episode_entries
 
 # ---------- PROGRESS TRACKER ----------
 def load_progress():
