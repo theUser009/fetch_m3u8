@@ -1,42 +1,47 @@
-name: Anime Scraper (Every 3 Hours)
+name: Anime Scraper (Every 3 Hours or on app.py change)
 
 on:
   schedule:
-    - cron: "0 */3 * * *"  # every 3 hours
-  workflow_dispatch:  # manual trigger
+    - cron: "0 */3 * * *"   # every 3 hours
+  push:
+    paths:
+      - "app.py"            # trigger ONLY if app.py changes
+  workflow_dispatch:         # manual trigger
 
 permissions:
-  contents: write  # ✅ allows git push
+  contents: write  # needed for committing back to repo
+
+concurrency:
+  group: anime-scraper-group
+  cancel-in-progress: true   # 🧠 cancels previous run if a new one starts
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 175   # 2 hours 55 minutes
+    timeout-minutes: 175  # 2h 55m
 
     steps:
-      - name: Checkout repo
+      - name: 🧩 Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+      - name: 📦 Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Run scraper
+      - name: 🚀 Run scraper
         env:
-          MAX_ID: 153801  # adjust per your need
+          MAX_ID: 153801
           KEYS: ${{ secrets.KEYS }}
-          
         run: |
           echo "⏳ Starting scrape run..."
           python app.py
           echo "✅ Scrape completed or timed out (2h55m limit)."
 
-      - name: Commit updated binary files
+      - name: 💾 Commit updated binary files
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
