@@ -211,8 +211,10 @@ def save_progress(last_id: int):
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     MAX_ID = int(os.getenv("MAX_ID", "30"))  # per GitHub run
-    START_ID = 153800
-    END_ID = 153800
+
+    last_saved_id = load_progress()
+    START_ID = last_saved_id + 1
+    END_ID = START_ID + MAX_ID - 1  # process MAX_ID entries per run
 
     msg_fun(f"🚀 Starting Miruro scrape: IDs {START_ID} → {END_ID}")
 
@@ -227,13 +229,6 @@ def main():
             try:
                 # Measure time taken per anime
                 start_time = time.time()
-                
-                episode_data = extract_anime_urls(anime_id, driver)
-                if not episode_data:
-                    save_progress(anime_id)
-                    continue
-
-
                 episode_data = extract_anime_urls(anime_id, driver)
                 elapsed_time = time.time() - start_time
 
@@ -243,7 +238,7 @@ def main():
 
                 combined_str = ",".join(episode_data)
 
-                # Format time — e.g., 12.3s or 1m23s if longer
+                # Format time — e.g., 12.3s or 1m23s
                 if elapsed_time < 60:
                     elapsed_label = f"{elapsed_time:.1f}s"
                 else:
@@ -251,6 +246,11 @@ def main():
                     elapsed_label = f"{mins}m{secs}s"
 
                 file_path = os.path.join(OUTPUT_DIR, f"anime_{anime_id}_{elapsed_label}.bin")
+
+                # 🔄 If older bin exists for same anime_id, delete it
+                for f in os.listdir(OUTPUT_DIR):
+                    if f.startswith(f"anime_{anime_id}_") and f.endswith(".bin"):
+                        os.remove(os.path.join(OUTPUT_DIR, f))
 
                 # Save as compressed binary
                 with gzip.open(file_path, "wb") as f:
@@ -263,15 +263,9 @@ def main():
                 except Exception as e:
                     print(f"⚠️ Telegram send failed for {anime_id}: {e}")
 
+                # ✅ Save progress after each anime
                 save_progress(anime_id)
 
-
-                try:
-                    file_fun(file_path, caption=f"Anime ID {anime_id} ✅ ({len(episode_data)} eps)")
-                except Exception as e:
-                    print(f"⚠️ Telegram send failed for {anime_id}: {e}")
-
-                save_progress(anime_id)
             except Exception as e:
                 print(f"[ERROR] {anime_id}: {e}")
                 traceback.print_exc()

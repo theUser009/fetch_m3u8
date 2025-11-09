@@ -2,23 +2,23 @@ name: Anime Scraper (Every 3 Hours or on app.py change)
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # every 3 hours
+    - cron: "0 */3 * * *"   # ⏰ Every 3 hours
   push:
     paths:
-      - "app.py"            # trigger ONLY if app.py changes
-  workflow_dispatch:         # manual trigger
+      - "app.py"            # 🧠 Only trigger if app.py changes
+  workflow_dispatch:         # ▶️ Allow manual trigger
 
 permissions:
-  contents: write  # needed for committing back to repo
+  contents: write  # ✅ Needed for committing back to repo
 
 concurrency:
   group: anime-scraper-group
-  cancel-in-progress: true   # 🧠 cancels previous run if a new one starts
+  cancel-in-progress: true   # 🛑 Cancel previous run if a new one starts
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 175  # 2h 55m
+    timeout-minutes: 175  # ⏳ 2h 55m max runtime
 
     steps:
       - name: 🧩 Checkout repo
@@ -30,21 +30,27 @@ jobs:
           python-version: "3.12"
 
       - name: 📦 Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          echo "📦 Installing dependencies..."
+          pip install -r requirements.txt
 
       - name: 🚀 Run scraper
         env:
-          MAX_ID: 153801
+          MAX_ID: 500000        # adjust upper limit per need
           KEYS: ${{ secrets.KEYS }}
         run: |
           echo "⏳ Starting scrape run..."
           python app.py
           echo "✅ Scrape completed or timed out (2h55m limit)."
 
-      - name: 💾 Commit updated binary files
+      - name: 💾 Commit updated binaries and progress
         run: |
+          echo "💾 Checking for updated files..."
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add anime_bins/*.bin || true
-          git commit -m "Update anime binaries [$(date +'%Y-%m-%d %H:%M:%S')]" || echo "No changes to commit"
+          git add anime_bins/*.bin progress.txt || true
+          git commit -m "Update anime data & progress [$(date +'%Y-%m-%d %H:%M:%S')]" || echo "No changes to commit"
           git push || echo "No changes to push"
+
+      - name: ✅ Workflow finished
+        run: echo "🎉 Anime scrape workflow completed successfully."
