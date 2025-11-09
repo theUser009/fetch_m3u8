@@ -4,6 +4,9 @@ import time
 import gzip
 import pickle
 import traceback
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
@@ -21,7 +24,6 @@ DEBUG_DIR = "debug_dumps"
 
 # Enable testing mode (True = capture screenshots and HTML on failure)
 TESTING_FLAG = False
-
 
 # ---------- DRIVER ----------
 def initialize_driver():
@@ -60,6 +62,7 @@ def get_total_episodes(driver):
         print(f"⚠️ Failed to get total episodes: {e}")
         return 0
 
+
 # ---------- VIDEO URL EXTRACT ----------
 def extract_video_url(driver, max_presses=10):
     body = driver.find_element(By.TAG_NAME, "body")
@@ -96,7 +99,31 @@ def save_debug_snapshot(driver, anime_id, error_text="Unknown Error"):
         print(f"🧩 Debug files saved and sent for Anime ID {anime_id}")
     except Exception as e:
         print(f"⚠️ Failed to save/send debug dump for ID {anime_id}: {e}")
- 
+
+
+# ---------- THREAD-SAFE EPISODE FETCH ----------
+driver_lock = threading.Lock()
+
+def fetch_episode_threadsafe(ep, anime_id, driver):
+    """Thread-safe episode fetch using a shared driver."""
+    with driver_lock:
+        try:
+            ep_url = f"{MIRURO_WATCH_BASE}/{anime_id}/episode-{ep}"
+            driver.get(ep_url)
+            time.sleep(1)
+            vurl = extract_video_url(driver)
+            if vurl:
+                return f"ep_num_{ep}_url_data_{vurl}"
+            else:
+                print(f"  ⚠️ Ep {ep}: No URL found")
+                return None
+        except Exception as e:
+            print(f"  ❌ Ep {ep} error: {str(e)[:80]}")
+            if TESTING_FLAG:
+                save_debug_snapshot(driver, anime_id, f"Episode {ep} error: {e}")
+            return None
+
+
 # ---------- EXTRACT ONE ANIME ----------
 def extract_anime_urls(anime_id: int, driver):
     url = f"{MIRURO_WATCH_BASE}/{anime_id}"
@@ -141,26 +168,24 @@ def extract_anime_urls(anime_id: int, driver):
 
     print(f"📺 Detected {total_eps} episodes for '{title_text}'")
 
-    # --- Step 3: Extract each episode URL ---
+    # --- Step 3: Extract each episode URL (multi-threaded with one driver) ---
     episode_entries = []
-    for ep in range(1, total_eps + 1):
-        ep_url = f"{MIRURO_WATCH_BASE}/{anime_id}/episode-{ep}"
-        try:
-            driver.get(ep_url)
-            time.sleep(1)
-            vurl = extract_video_url(driver)
-            if vurl:
-                entry = f"ep_num_{ep}_url_data_{vurl}"
-                episode_entries.append(entry)
-                # print(f"  ✅ {entry}")
-            else:
-                print(f"  ⚠️ Ep {ep}: No URL found")
-        except Exception as e:
-            print(f"  ❌ Ep {ep} error: {str(e)[:80]}")
-            if TESTING_FLAG:
-                save_debug_snapshot(driver, anime_id, f"Episode {ep} error: {e}")
+    MAX_THREADS = 10  # run up to 10 episodes in parallel (shared driver, safe)
+
+    with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+        futures = {executor.submit(fetch_episode_threadsafe, ep, anime_id, driver): ep for ep in range(1, total_eps + 1)}
+        for future in as_completed(futures):
+            ep = futures[future]
+            try:
+                result = future.result()
+                if result:
+                    episode_entries.append(result)
+                    print(f"  ✅ Ep {ep} done")
+            except Exception as e:
+                print(f"  ❌ Thread error on Ep {ep}: {e}")
 
     return episode_entries
+
 
 # ---------- PROGRESS TRACKER ----------
 def load_progress():
